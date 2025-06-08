@@ -13,7 +13,10 @@ const bookingRoutes = require('./routes/bookings');
 // Load environment variables
 dotenv.config();
 
-// Connect to MongoDB
+// Initialize models and associations
+require('./models');
+
+// Connect to PostgreSQL
 connectDB();
 
 const app = express();

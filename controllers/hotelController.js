@@ -1,5 +1,4 @@
-const Hotel = require('../models/Hotel');
-const Room = require('../models/Room');
+const { Hotel, User, Room } = require('../models');
 
 // @desc    Add new hotel
 // @route   POST /api/hotels
@@ -20,7 +19,7 @@ const addHotel = async (req, res, next) => {
     const { name, description, location, starRating, amenities, address, phone, email } = req.body;
 
     // Check if hotel with same name and location already exists
-    const existingHotel = await Hotel.findOne({ name, location });
+    const existingHotel = await Hotel.findOne({ where: { name, location } });
     if (existingHotel) {
       return res.status(400).json({
         success: false,
@@ -61,34 +60,40 @@ const getHotels = async (req, res, next) => {
     const { location, name, star, page = 1, limit = 10 } = req.query;
     
     // Build filter object
-    const filter = { isActive: true };
+    const where = { isActive: true };
     
     if (location) {
-      filter.location = { $regex: location, $options: 'i' };
+      where.location = { [require('sequelize').Op.iLike]: `%${location}%` };
     }
     
     if (name) {
-      filter.name = { $regex: name, $options: 'i' };
+      where.name = { [require('sequelize').Op.iLike]: `%${name}%` };
     }
     
     if (star) {
-      filter.starRating = parseInt(star);
+      where.starRating = parseInt(star);
     }
 
     // Calculate pagination
     const pageNumber = parseInt(page);
     const limitNumber = parseInt(limit);
-    const skip = (pageNumber - 1) * limitNumber;
+    const offset = (pageNumber - 1) * limitNumber;
 
     // Get total count for pagination
-    const total = await Hotel.countDocuments(filter);
+    const total = await Hotel.count({ where });
     
     // Get hotels with pagination
-    const hotels = await Hotel.find(filter)
-      .populate('createdBy', 'name email')
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(limitNumber);
+    const hotels = await Hotel.findAll({
+      where,
+      include: [{
+        model: require('../models/User'),
+        as: 'creator',
+        attributes: ['id', 'name', 'email']
+      }],
+      order: [['createdAt', 'DESC']],
+      offset,
+      limit: limitNumber
+    });
 
     res.status(200).json({
       success: true,
