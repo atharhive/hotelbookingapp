@@ -26,6 +26,22 @@ app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 
+// Root route
+app.get('/', (req, res) => {
+  res.status(200).json({
+    success: true,
+    message: 'Hotel Booking API',
+    version: '1.0.0',
+    documentation: '/api/health',
+    endpoints: {
+      auth: '/api/auth',
+      hotels: '/api/hotels',
+      rooms: '/api/rooms',
+      bookings: '/api/bookings'
+    }
+  });
+});
+
 // Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/hotels', hotelRoutes);

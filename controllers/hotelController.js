@@ -119,8 +119,13 @@ const getHotels = async (req, res, next) => {
 // @access  Public
 const getHotelById = async (req, res, next) => {
   try {
-    const hotel = await Hotel.findById(req.params.id)
-      .populate('createdBy', 'name email');
+    const hotel = await Hotel.findByPk(req.params.id, {
+      include: [{
+        model: User,
+        as: 'creator',
+        attributes: ['id', 'name', 'email']
+      }]
+    });
 
     if (!hotel) {
       return res.status(404).json({
@@ -137,7 +142,7 @@ const getHotelById = async (req, res, next) => {
     }
 
     // Get rooms for this hotel
-    const rooms = await Room.find({ hotelId: hotel._id, isAvailable: true });
+    const rooms = await Room.findAll({ where: { hotelId: hotel.id, isAvailable: true } });
 
     res.status(200).json({
       success: true,
