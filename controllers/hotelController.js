@@ -86,7 +86,7 @@ const getHotels = async (req, res, next) => {
     const hotels = await Hotel.findAll({
       where,
       include: [{
-        model: require('../models/User'),
+        model: User,
         as: 'creator',
         attributes: ['id', 'name', 'email']
       }],

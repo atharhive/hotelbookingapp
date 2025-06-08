@@ -39,8 +39,16 @@ const Room = sequelize.define('Room', {
     }
   },
   amenities: {
-    type: DataTypes.ARRAY(DataTypes.ENUM('WiFi', 'AC', 'TV', 'Minibar', 'Balcony', 'Room Service', 'Bathtub', 'Safe', 'Coffee Maker', 'Gym Access')),
-    defaultValue: []
+    type: DataTypes.ARRAY(DataTypes.STRING),
+    defaultValue: [],
+    validate: {
+      isValidAmenities(value) {
+        const validAmenities = ['WiFi', 'AC', 'TV', 'Minibar', 'Balcony', 'Room Service', 'Bathtub', 'Safe', 'Coffee Maker', 'Gym Access'];
+        if (value && value.some(item => !validAmenities.includes(item))) {
+          throw new Error('Invalid amenity provided');
+        }
+      }
+    }
   },
   maxGuests: {
     type: DataTypes.INTEGER,
