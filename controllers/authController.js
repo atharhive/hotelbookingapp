@@ -15,7 +15,7 @@ const register = async (req, res, next) => {
     const { name, email, password, role } = req.body;
 
     // Check if user already exists
-    const existingUser = await User.findOne({ email });
+    const existingUser = await User.findOne({ where: { email } });
     if (existingUser) {
       return res.status(400).json({
         success: false,
@@ -32,7 +32,7 @@ const register = async (req, res, next) => {
     });
 
     // Generate token
-    const token = generateToken(user._id);
+    const token = generateToken(user.id);
 
     res.status(201).json({
       success: true,
@@ -68,7 +68,7 @@ const login = async (req, res, next) => {
     }
 
     // Check if user exists and get password
-    const user = await User.findOne({ email }).select('+password');
+    const user = await User.findOne({ where: { email } });
     if (!user) {
       return res.status(401).json({
         success: false,
@@ -94,10 +94,7 @@ const login = async (req, res, next) => {
     }
 
     // Generate token
-    const token = generateToken(user._id);
-
-    // Remove password from user object
-    user.password = undefined;
+    const token = generateToken(user.id);
 
     res.status(200).json({
       success: true,
@@ -117,7 +114,7 @@ const login = async (req, res, next) => {
 // @access  Private
 const getProfile = async (req, res, next) => {
   try {
-    const user = await User.findById(req.user.id);
+    const user = await User.findByPk(req.user.id);
     
     if (!user) {
       return res.status(404).json({

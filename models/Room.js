@@ -1,64 +1,101 @@
-const mongoose = require('mongoose');
+const { DataTypes } = require('sequelize');
+const { sequelize } = require('../config/db');
 
-const roomSchema = new mongoose.Schema({
+const Room = sequelize.define('Room', {
+  id: {
+    type: DataTypes.UUID,
+    defaultValue: DataTypes.UUIDV4,
+    primaryKey: true
+  },
   hotelId: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'Hotel',
-    required: [true, 'Hotel ID is required']
+    type: DataTypes.UUID,
+    allowNull: false,
+    references: {
+      model: 'Hotels',
+      key: 'id'
+    }
   },
   roomType: {
-    type: String,
-    required: [true, 'Room type is required'],
-    enum: ['single', 'double', 'deluxe', 'suite', 'family'],
-    trim: true
+    type: DataTypes.ENUM('single', 'double', 'deluxe', 'suite', 'family'),
+    allowNull: false
   },
   roomNumber: {
-    type: String,
-    required: [true, 'Room number is required'],
-    trim: true
+    type: DataTypes.STRING,
+    allowNull: false,
+    validate: {
+      notEmpty: {
+        msg: 'Room number is required'
+      }
+    }
   },
   pricePerNight: {
-    type: Number,
-    required: [true, 'Price per night is required'],
-    min: [0, 'Price cannot be negative']
+    type: DataTypes.DECIMAL(10, 2),
+    allowNull: false,
+    validate: {
+      min: {
+        args: [0],
+        msg: 'Price cannot be negative'
+      }
+    }
   },
-  amenities: [{
-    type: String,
-    enum: ['WiFi', 'AC', 'TV', 'Minibar', 'Balcony', 'Room Service', 'Bathtub', 'Safe', 'Coffee Maker', 'Gym Access'],
-    trim: true
-  }],
+  amenities: {
+    type: DataTypes.ARRAY(DataTypes.ENUM('WiFi', 'AC', 'TV', 'Minibar', 'Balcony', 'Room Service', 'Bathtub', 'Safe', 'Coffee Maker', 'Gym Access')),
+    defaultValue: []
+  },
   maxGuests: {
-    type: Number,
-    required: [true, 'Maximum guests is required'],
-    min: [1, 'Maximum guests must be at least 1'],
-    max: [10, 'Maximum guests cannot exceed 10']
+    type: DataTypes.INTEGER,
+    allowNull: false,
+    validate: {
+      min: {
+        args: [1],
+        msg: 'Maximum guests must be at least 1'
+      },
+      max: {
+        args: [10],
+        msg: 'Maximum guests cannot exceed 10'
+      }
+    }
   },
   isAvailable: {
-    type: Boolean,
-    default: true
+    type: DataTypes.BOOLEAN,
+    defaultValue: true
   },
   description: {
-    type: String,
-    maxlength: [500, 'Description cannot exceed 500 characters']
+    type: DataTypes.STRING(500),
+    validate: {
+      len: {
+        args: [0, 500],
+        msg: 'Description cannot exceed 500 characters'
+      }
+    }
   },
   bedType: {
-    type: String,
-    enum: ['single', 'double', 'queen', 'king'],
-    required: [true, 'Bed type is required']
+    type: DataTypes.ENUM('single', 'double', 'queen', 'king'),
+    allowNull: false
   },
   size: {
-    type: Number, // in square meters
-    min: [10, 'Room size must be at least 10 square meters']
+    type: DataTypes.INTEGER,
+    validate: {
+      min: {
+        args: [10],
+        msg: 'Room size must be at least 10 square meters'
+      }
+    }
   }
 }, {
-  timestamps: true
+  timestamps: true,
+  indexes: [
+    {
+      unique: true,
+      fields: ['hotelId', 'roomNumber']
+    },
+    {
+      fields: ['hotelId', 'roomType', 'pricePerNight']
+    },
+    {
+      fields: ['amenities']
+    }
+  ]
 });
 
-// Compound index to ensure unique room numbers per hotel
-roomSchema.index({ hotelId: 1, roomNumber: 1 }, { unique: true });
-
-// Index for search optimization
-roomSchema.index({ hotelId: 1, roomType: 1, pricePerNight: 1 });
-roomSchema.index({ amenities: 1 });
-
-module.exports = mongoose.model('Room', roomSchema);
+module.exports = Room;

@@ -1,67 +1,129 @@
-const mongoose = require('mongoose');
+const { DataTypes } = require('sequelize');
+const { sequelize } = require('../config/db');
 
-const hotelSchema = new mongoose.Schema({
+const Hotel = sequelize.define('Hotel', {
+  id: {
+    type: DataTypes.UUID,
+    defaultValue: DataTypes.UUIDV4,
+    primaryKey: true
+  },
   name: {
-    type: String,
-    required: [true, 'Hotel name is required'],
-    trim: true,
-    maxlength: [100, 'Hotel name cannot exceed 100 characters']
+    type: DataTypes.STRING(100),
+    allowNull: false,
+    validate: {
+      notEmpty: {
+        msg: 'Hotel name is required'
+      },
+      len: {
+        args: [1, 100],
+        msg: 'Hotel name cannot exceed 100 characters'
+      }
+    }
   },
   description: {
-    type: String,
-    required: [true, 'Hotel description is required'],
-    maxlength: [1000, 'Description cannot exceed 1000 characters']
+    type: DataTypes.TEXT,
+    allowNull: false,
+    validate: {
+      notEmpty: {
+        msg: 'Hotel description is required'
+      },
+      len: {
+        args: [1, 1000],
+        msg: 'Description cannot exceed 1000 characters'
+      }
+    }
   },
   location: {
-    type: String,
-    required: [true, 'Hotel location is required'],
-    trim: true,
-    maxlength: [100, 'Location cannot exceed 100 characters']
+    type: DataTypes.STRING(100),
+    allowNull: false,
+    validate: {
+      notEmpty: {
+        msg: 'Hotel location is required'
+      },
+      len: {
+        args: [1, 100],
+        msg: 'Location cannot exceed 100 characters'
+      }
+    }
   },
   starRating: {
-    type: Number,
-    required: [true, 'Star rating is required'],
-    min: [1, 'Star rating must be at least 1'],
-    max: [5, 'Star rating cannot exceed 5']
+    type: DataTypes.INTEGER,
+    allowNull: false,
+    validate: {
+      min: {
+        args: [1],
+        msg: 'Star rating must be at least 1'
+      },
+      max: {
+        args: [5],
+        msg: 'Star rating cannot exceed 5'
+      }
+    }
   },
   createdBy: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User',
-    required: true
+    type: DataTypes.UUID,
+    allowNull: false,
+    references: {
+      model: 'Users',
+      key: 'id'
+    }
   },
-  amenities: [{
-    type: String,
-    trim: true
-  }],
+  amenities: {
+    type: DataTypes.ARRAY(DataTypes.STRING),
+    defaultValue: []
+  },
   address: {
-    type: String,
-    required: [true, 'Hotel address is required'],
-    maxlength: [200, 'Address cannot exceed 200 characters']
+    type: DataTypes.STRING(200),
+    allowNull: false,
+    validate: {
+      notEmpty: {
+        msg: 'Hotel address is required'
+      },
+      len: {
+        args: [1, 200],
+        msg: 'Address cannot exceed 200 characters'
+      }
+    }
   },
   phone: {
-    type: String,
-    required: [true, 'Phone number is required'],
-    match: [/^\+?[\d\s\-\(\)]+$/, 'Please enter a valid phone number']
+    type: DataTypes.STRING,
+    allowNull: false,
+    validate: {
+      is: {
+        args: /^\+?[\d\s\-\(\)]+$/,
+        msg: 'Please enter a valid phone number'
+      }
+    }
   },
   email: {
-    type: String,
-    required: [true, 'Hotel email is required'],
-    lowercase: true,
-    match: [
-      /^\w+([\.-]?\w+)*@\w+([\.-]?\w+)*(\.\w{2,3})+$/,
-      'Please enter a valid email'
-    ]
+    type: DataTypes.STRING,
+    allowNull: false,
+    validate: {
+      isEmail: {
+        msg: 'Please enter a valid email'
+      }
+    },
+    set(value) {
+      this.setDataValue('email', value.toLowerCase());
+    }
   },
   isActive: {
-    type: Boolean,
-    default: true
+    type: DataTypes.BOOLEAN,
+    defaultValue: true
   }
 }, {
-  timestamps: true
+  timestamps: true,
+  indexes: [
+    {
+      fields: ['location', 'starRating']
+    },
+    {
+      fields: ['name']
+    },
+    {
+      fields: ['location']
+    }
+  ]
 });
 
-// Index for search optimization
-hotelSchema.index({ location: 1, starRating: 1 });
-hotelSchema.index({ name: 'text', description: 'text', location: 'text' });
-
-module.exports = mongoose.model('Hotel', hotelSchema);
+module.exports = Hotel;
