@@ -82,23 +82,25 @@ const createBooking = async (req, res, next) => {
     }
 
     // Check for conflicting bookings
-    const conflictingBookings = await Booking.find({
-      roomId,
-      status: 'confirmed',
-      $or: [
-        {
-          startDate: { $lte: start },
-          endDate: { $gt: start }
-        },
-        {
-          startDate: { $lt: end },
-          endDate: { $gte: end }
-        },
-        {
-          startDate: { $gte: start },
-          endDate: { $lte: end }
-        }
-      ]
+    const conflictingBookings = await Booking.findAll({
+      where: {
+        roomId,
+        status: 'confirmed',
+        [Op.or]: [
+          {
+            startDate: { [Op.lte]: start },
+            endDate: { [Op.gt]: start }
+          },
+          {
+            startDate: { [Op.lt]: end },
+            endDate: { [Op.gte]: end }
+          },
+          {
+            startDate: { [Op.gte]: start },
+            endDate: { [Op.lte]: end }
+          }
+        ]
+      }
     });
 
     if (conflictingBookings.length > 0) {
@@ -113,21 +115,38 @@ const createBooking = async (req, res, next) => {
     const totalPrice = nights * room.pricePerNight;
 
     // Create booking
+    const bookingReference = 'BK' + Date.now() + Math.random().toString(36).substr(2, 5).toUpperCase();
     const booking = await Booking.create({
       userId,
       roomId,
-      hotelId: room.hotelId._id,
+      hotelId: room.hotel.id,
       startDate: start,
       endDate: end,
       guests,
       specialRequests,
-      totalPrice
+      totalPrice,
+      bookingReference
     });
 
-    const populatedBooking = await Booking.findById(booking._id)
-      .populate('userId', 'name email')
-      .populate('roomId', 'roomType roomNumber pricePerNight')
-      .populate('hotelId', 'name location address');
+    const populatedBooking = await Booking.findByPk(booking.id, {
+      include: [
+        {
+          model: User,
+          as: 'user',
+          attributes: ['id', 'name', 'email']
+        },
+        {
+          model: Room,
+          as: 'room',
+          attributes: ['id', 'roomType', 'roomNumber', 'pricePerNight']
+        },
+        {
+          model: Hotel,
+          as: 'hotel',
+          attributes: ['id', 'name', 'location', 'address']
+        }
+      ]
+    });
 
     res.status(201).json({
       success: true,
@@ -150,26 +169,38 @@ const getUserBookings = async (req, res, next) => {
     const userId = req.user.id;
 
     // Build filter
-    const filter = { userId };
+    const where = { userId };
     if (status) {
-      filter.status = status;
+      where.status = status;
     }
 
     // Calculate pagination
     const pageNumber = parseInt(page);
     const limitNumber = parseInt(limit);
-    const skip = (pageNumber - 1) * limitNumber;
+    const offset = (pageNumber - 1) * limitNumber;
 
     // Get total count
-    const total = await Booking.countDocuments(filter);
+    const total = await Booking.count({ where });
 
     // Get bookings
-    const bookings = await Booking.find(filter)
-      .populate('roomId', 'roomType roomNumber pricePerNight amenities')
-      .populate('hotelId', 'name location starRating address phone')
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(limitNumber);
+    const bookings = await Booking.findAll({
+      where,
+      include: [
+        {
+          model: Room,
+          as: 'room',
+          attributes: ['id', 'roomType', 'roomNumber', 'pricePerNight', 'amenities']
+        },
+        {
+          model: Hotel,
+          as: 'hotel',
+          attributes: ['id', 'name', 'location', 'starRating', 'address', 'phone']
+        }
+      ],
+      order: [['createdAt', 'DESC']],
+      offset,
+      limit: limitNumber
+    });
 
     res.status(200).json({
       success: true,
