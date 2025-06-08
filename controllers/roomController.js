@@ -1,4 +1,5 @@
 const { Room, Hotel, Booking } = require('../models');
+const { Op } = require('sequelize');
 
 // @desc    Add room to hotel
 // @route   POST /api/rooms
@@ -94,45 +95,51 @@ const getRooms = async (req, res, next) => {
     } = req.query;
 
     // Build filter object
-    const filter = { isAvailable: true };
+    const where = { isAvailable: true };
 
     if (hotelId) {
-      filter.hotelId = hotelId;
+      where.hotelId = hotelId;
     }
 
     if (roomType) {
-      filter.roomType = roomType;
+      where.roomType = roomType;
     }
 
     if (priceMin || priceMax) {
-      filter.pricePerNight = {};
-      if (priceMin) filter.pricePerNight.$gte = parseInt(priceMin);
-      if (priceMax) filter.pricePerNight.$lte = parseInt(priceMax);
+      where.pricePerNight = {};
+      if (priceMin) where.pricePerNight[Op.gte] = parseInt(priceMin);
+      if (priceMax) where.pricePerNight[Op.lte] = parseInt(priceMax);
     }
 
     if (amenities) {
       const amenitiesArray = amenities.split(',').map(item => item.trim());
-      filter.amenities = { $in: amenitiesArray };
+      where.amenities = { [Op.overlap]: amenitiesArray };
     }
 
     if (maxGuests) {
-      filter.maxGuests = { $gte: parseInt(maxGuests) };
+      where.maxGuests = { [Op.gte]: parseInt(maxGuests) };
     }
 
     // Calculate pagination
     const pageNumber = parseInt(page);
     const limitNumber = parseInt(limit);
-    const skip = (pageNumber - 1) * limitNumber;
+    const offset = (pageNumber - 1) * limitNumber;
 
     // Get total count for pagination
-    const total = await Room.countDocuments(filter);
+    const total = await Room.count({ where });
 
     // Get rooms with pagination
-    const rooms = await Room.find(filter)
-      .populate('hotelId', 'name location starRating')
-      .sort({ pricePerNight: 1 })
-      .skip(skip)
-      .limit(limitNumber);
+    const rooms = await Room.findAll({
+      where,
+      include: [{
+        model: Hotel,
+        as: 'hotel',
+        attributes: ['id', 'name', 'location', 'starRating']
+      }],
+      order: [['pricePerNight', 'ASC']],
+      offset,
+      limit: limitNumber
+    });
 
     res.status(200).json({
       success: true,
@@ -158,8 +165,13 @@ const getRooms = async (req, res, next) => {
 // @access  Public
 const getRoomById = async (req, res, next) => {
   try {
-    const room = await Room.findById(req.params.id)
-      .populate('hotelId', 'name location starRating address phone email');
+    const room = await Room.findByPk(req.params.id, {
+      include: [{
+        model: Hotel,
+        as: 'hotel',
+        attributes: ['id', 'name', 'location', 'starRating', 'address', 'phone', 'email']
+      }]
+    });
 
     if (!room) {
       return res.status(404).json({
