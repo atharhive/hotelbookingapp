@@ -1,6 +1,4 @@
-const Room = require('../models/Room');
-const Hotel = require('../models/Hotel');
-const Booking = require('../models/Booking');
+const { Room, Hotel, Booking } = require('../models');
 
 // @desc    Add room to hotel
 // @route   POST /api/rooms
@@ -22,7 +20,7 @@ const addRoom = async (req, res, next) => {
     const { hotelId, roomType, roomNumber, pricePerNight, amenities, maxGuests, description, bedType, size } = req.body;
 
     // Check if hotel exists
-    const hotel = await Hotel.findById(hotelId);
+    const hotel = await Hotel.findByPk(hotelId);
     if (!hotel) {
       return res.status(404).json({
         success: false,
@@ -38,7 +36,7 @@ const addRoom = async (req, res, next) => {
     }
 
     // Check if room number already exists in this hotel
-    const existingRoom = await Room.findOne({ hotelId, roomNumber });
+    const existingRoom = await Room.findOne({ where: { hotelId, roomNumber } });
     if (existingRoom) {
       return res.status(400).json({
         success: false,
@@ -58,7 +56,13 @@ const addRoom = async (req, res, next) => {
       size
     });
 
-    const populatedRoom = await Room.findById(room._id).populate('hotelId', 'name location');
+    const populatedRoom = await Room.findByPk(room.id, {
+      include: [{
+        model: Hotel,
+        as: 'hotel',
+        attributes: ['id', 'name', 'location']
+      }]
+    });
 
     res.status(201).json({
       success: true,

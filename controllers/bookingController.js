@@ -1,6 +1,5 @@
-const Booking = require('../models/Booking');
-const Room = require('../models/Room');
-const Hotel = require('../models/Hotel');
+const { Booking, Room, Hotel, User } = require('../models');
+const { Op } = require('sequelize');
 
 // @desc    Create new booking
 // @route   POST /api/bookings
@@ -27,7 +26,12 @@ const createBooking = async (req, res, next) => {
     }
 
     // Check if room exists and is available
-    const room = await Room.findById(roomId).populate('hotelId');
+    const room = await Room.findByPk(roomId, {
+      include: [{
+        model: Hotel,
+        as: 'hotel'
+      }]
+    });
     if (!room) {
       return res.status(404).json({
         success: false,
@@ -43,7 +47,7 @@ const createBooking = async (req, res, next) => {
     }
 
     // Check if hotel is active
-    if (!room.hotelId.isActive) {
+    if (!room.hotel.isActive) {
       return res.status(400).json({
         success: false,
         message: 'Hotel is not accepting bookings'
