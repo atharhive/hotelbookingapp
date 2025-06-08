@@ -21,8 +21,12 @@ author = "agent"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "npm install express mongoose bcryptjs jsonwebtoken cors dotenv && node server.js"
+args = "node server.js"
 waitForPort = 5000
 
 [deployment]
-run = ["sh", "-c", "npm install express mongoose bcryptjs jsonwebtoken cors dotenv && node server.js"]
+run = ["sh", "-c", "node server.js"]
+
+[[ports]]
+localPort = 5000
+externalPort = 80
