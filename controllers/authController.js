@@ -109,6 +109,34 @@ const login = async (req, res, next) => {
   }
 };
 
+// @desc    Get current user (for token validation)
+// @route   GET /api/auth/me
+// @access  Private
+const getCurrentUser = async (req, res, next) => {
+  try {
+    const user = await User.findByPk(req.user.id, {
+      attributes: { exclude: ['password'] }
+    });
+    
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      message: 'User retrieved successfully',
+      data: {
+        user
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 // @desc    Get user profile
 // @route   GET /api/auth/profile
 // @access  Private
@@ -138,5 +166,6 @@ const getProfile = async (req, res, next) => {
 module.exports = {
   register,
   login,
+  getCurrentUser,
   getProfile
 };
