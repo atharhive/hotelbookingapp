@@ -1,145 +1,73 @@
-const { Room, Hotel, Booking } = require('../models');
-const { Op } = require('sequelize');
+const { supabase } = require('../config/db');
 
-// @desc    Add room to hotel
+// @desc    Add new room
 // @route   POST /api/rooms
 // @access  Private (Admin only)
-// Sample request body:
-// {
-//   "hotelId": "64a5f8c8b1234567890abcde",
-//   "roomType": "deluxe",
-//   "roomNumber": "101",
-//   "pricePerNight": 2500,
-//   "amenities": ["WiFi", "AC", "TV"],
-//   "maxGuests": 2,
-//   "description": "Deluxe room with city view",
-//   "bedType": "queen",
-//   "size": 25
-// }
 const addRoom = async (req, res, next) => {
   try {
-    const { hotelId, roomType, roomNumber, pricePerNight, amenities, maxGuests, description, bedType, size } = req.body;
+    const { hotel_id, room_type, price_per_night, max_guests, amenities, is_available } = req.body;
 
     // Check if hotel exists
-    const hotel = await Hotel.findByPk(hotelId);
-    if (!hotel) {
+    const { data: hotel, error: hotelError } = await supabase
+      .from('hotels')
+      .select('id')
+      .eq('id', hotel_id)
+      .single();
+    if (hotelError || !hotel) {
       return res.status(404).json({
         success: false,
         message: 'Hotel not found'
       });
     }
 
-    if (!hotel.isActive) {
-      return res.status(400).json({
-        success: false,
-        message: 'Cannot add rooms to inactive hotel'
-      });
-    }
-
-    // Check if room number already exists in this hotel
-    const existingRoom = await Room.findOne({ where: { hotelId, roomNumber } });
-    if (existingRoom) {
-      return res.status(400).json({
-        success: false,
-        message: 'Room number already exists in this hotel'
-      });
-    }
-
-    const room = await Room.create({
-      hotelId,
-      roomType,
-      roomNumber,
-      pricePerNight,
-      amenities,
-      maxGuests,
-      description,
-      bedType,
-      size
-    });
-
-    const populatedRoom = await Room.findByPk(room.id, {
-      include: [{
-        model: Hotel,
-        as: 'hotel',
-        attributes: ['id', 'name', 'location']
-      }]
-    });
+    // Insert new room
+    const { data: room, error } = await supabase
+      .from('rooms')
+      .insert([
+        {
+          hotel_id,
+          room_type,
+          price_per_night,
+          max_guests,
+          amenities,
+          is_available: is_available !== undefined ? is_available : true
+        }
+      ])
+      .select()
+      .single();
+    if (error) throw error;
 
     res.status(201).json({
       success: true,
       message: 'Room added successfully',
-      data: {
-        room: populatedRoom
-      }
+      data: { room }
     });
   } catch (error) {
     next(error);
   }
 };
 
-// @desc    Get rooms with filters
+// @desc    Get all rooms with filters
 // @route   GET /api/rooms
 // @access  Public
-// Query parameters: hotelId, roomType, priceMin, priceMax, amenities, maxGuests, page, limit
 const getRooms = async (req, res, next) => {
   try {
-    const { 
-      hotelId, 
-      roomType, 
-      priceMin, 
-      priceMax, 
-      amenities, 
-      maxGuests, 
-      page = 1, 
-      limit = 10 
-    } = req.query;
+    const { hotel_id, room_type, is_available, page = 1, limit = 10 } = req.query;
+    let query = supabase.from('rooms').select('*', { count: 'exact' });
 
-    // Build filter object
-    const where = { isAvailable: true };
+    if (hotel_id) query = query.eq('hotel_id', hotel_id);
+    if (room_type) query = query.ilike('room_type', `%${room_type}%`);
+    if (is_available !== undefined) query = query.eq('is_available', is_available === 'true');
 
-    if (hotelId) {
-      where.hotelId = hotelId;
-    }
-
-    if (roomType) {
-      where.roomType = roomType;
-    }
-
-    if (priceMin || priceMax) {
-      where.pricePerNight = {};
-      if (priceMin) where.pricePerNight[Op.gte] = parseInt(priceMin);
-      if (priceMax) where.pricePerNight[Op.lte] = parseInt(priceMax);
-    }
-
-    if (amenities) {
-      const amenitiesArray = amenities.split(',').map(item => item.trim());
-      where.amenities = { [Op.overlap]: amenitiesArray };
-    }
-
-    if (maxGuests) {
-      where.maxGuests = { [Op.gte]: parseInt(maxGuests) };
-    }
-
-    // Calculate pagination
+    // Pagination
     const pageNumber = parseInt(page);
     const limitNumber = parseInt(limit);
-    const offset = (pageNumber - 1) * limitNumber;
+    const from = (pageNumber - 1) * limitNumber;
+    const to = from + limitNumber - 1;
+    query = query.range(from, to);
 
-    // Get total count for pagination
-    const total = await Room.count({ where });
-
-    // Get rooms with pagination
-    const rooms = await Room.findAll({
-      where,
-      include: [{
-        model: Hotel,
-        as: 'hotel',
-        attributes: ['id', 'name', 'location', 'starRating']
-      }],
-      order: [['pricePerNight', 'ASC']],
-      offset,
-      limit: limitNumber
-    });
+    const { data: rooms, count, error } = await query;
+    if (error) throw error;
 
     res.status(200).json({
       success: true,
@@ -148,9 +76,9 @@ const getRooms = async (req, res, next) => {
         rooms,
         pagination: {
           currentPage: pageNumber,
-          totalPages: Math.ceil(total / limitNumber),
-          totalRooms: total,
-          hasNextPage: pageNumber < Math.ceil(total / limitNumber),
+          totalPages: Math.ceil((count || 0) / limitNumber),
+          totalRooms: count || 0,
+          hasNextPage: pageNumber < Math.ceil((count || 0) / limitNumber),
           hasPrevPage: pageNumber > 1
         }
       }
@@ -165,34 +93,22 @@ const getRooms = async (req, res, next) => {
 // @access  Public
 const getRoomById = async (req, res, next) => {
   try {
-    const room = await Room.findByPk(req.params.id, {
-      include: [{
-        model: Hotel,
-        as: 'hotel',
-        attributes: ['id', 'name', 'location', 'starRating', 'address', 'phone', 'email']
-      }]
-    });
-
-    if (!room) {
+    const { data: room, error } = await supabase
+      .from('rooms')
+      .select('*')
+      .eq('id', req.params.id)
+      .single();
+    if (error || !room) {
       return res.status(404).json({
         success: false,
         message: 'Room not found'
       });
     }
 
-    if (!room.isAvailable) {
-      return res.status(404).json({
-        success: false,
-        message: 'Room is not available'
-      });
-    }
-
     res.status(200).json({
       success: true,
       message: 'Room details retrieved successfully',
-      data: {
-        room
-      }
+      data: { room }
     });
   } catch (error) {
     next(error);
@@ -204,45 +120,30 @@ const getRoomById = async (req, res, next) => {
 // @access  Private (Admin only)
 const updateRoom = async (req, res, next) => {
   try {
-    const room = await Room.findById(req.params.id);
-
-    if (!room) {
+    const { data: room, error: findError } = await supabase
+      .from('rooms')
+      .select('*')
+      .eq('id', req.params.id)
+      .single();
+    if (findError || !room) {
       return res.status(404).json({
         success: false,
         message: 'Room not found'
       });
     }
 
-    // If updating room number, check for duplicates
-    if (req.body.roomNumber && req.body.roomNumber !== room.roomNumber) {
-      const existingRoom = await Room.findOne({ 
-        hotelId: room.hotelId, 
-        roomNumber: req.body.roomNumber 
-      });
-      
-      if (existingRoom) {
-        return res.status(400).json({
-          success: false,
-          message: 'Room number already exists in this hotel'
-        });
-      }
-    }
-
-    const updatedRoom = await Room.findByIdAndUpdate(
-      req.params.id,
-      req.body,
-      {
-        new: true,
-        runValidators: true
-      }
-    ).populate('hotelId', 'name location starRating');
+    const { data: updatedRoom, error } = await supabase
+      .from('rooms')
+      .update(req.body)
+      .eq('id', req.params.id)
+      .select()
+      .single();
+    if (error) throw error;
 
     res.status(200).json({
       success: true,
       message: 'Room updated successfully',
-      data: {
-        room: updatedRoom
-      }
+      data: { room: updatedRoom }
     });
   } catch (error) {
     next(error);
@@ -254,31 +155,23 @@ const updateRoom = async (req, res, next) => {
 // @access  Private (Admin only)
 const deleteRoom = async (req, res, next) => {
   try {
-    const room = await Room.findById(req.params.id);
-
-    if (!room) {
+    const { data: room, error: findError } = await supabase
+      .from('rooms')
+      .select('*')
+      .eq('id', req.params.id)
+      .single();
+    if (findError || !room) {
       return res.status(404).json({
         success: false,
         message: 'Room not found'
       });
     }
 
-    // Check if room has any active bookings
-    const activeBookings = await Booking.find({
-      roomId: req.params.id,
-      status: 'confirmed',
-      endDate: { $gte: new Date() }
-    });
-
-    if (activeBookings.length > 0) {
-      return res.status(400).json({
-        success: false,
-        message: 'Cannot delete room with active bookings'
-      });
-    }
-
-    // Soft delete - mark as unavailable
-    await Room.findByIdAndUpdate(req.params.id, { isAvailable: false });
+    const { error } = await supabase
+      .from('rooms')
+      .delete()
+      .eq('id', req.params.id);
+    if (error) throw error;
 
     res.status(200).json({
       success: true,

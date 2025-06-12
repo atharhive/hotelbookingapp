@@ -1,336 +1,77 @@
-const { Booking, Room, Hotel, User } = require('../models');
-const { Op } = require('sequelize');
+const { supabase } = require('../config/db');
 
-// @desc    Create new booking
+// @desc    Create a new booking
 // @route   POST /api/bookings
 // @access  Private
-// Sample request body:
-// {
-//   "roomId": "64a5f8c8b1234567890abcde",
-//   "startDate": "2024-02-15",
-//   "endDate": "2024-02-18",
-//   "guests": 2,
-//   "specialRequests": "Late check-in requested"
-// }
 const createBooking = async (req, res, next) => {
   try {
-    const { roomId, startDate, endDate, guests, specialRequests } = req.body;
-    const userId = req.user.id;
+    const { hotel_id, room_id, check_in, check_out, total_price } = req.body;
+    const user_id = req.user.id;
 
-    // Validate required fields
-    if (!roomId || !startDate || !endDate || !guests) {
-      return res.status(400).json({
-        success: false,
-        message: 'Room ID, start date, end date, and number of guests are required'
-      });
-    }
-
-    // Check if room exists and is available
-    const room = await Room.findByPk(roomId, {
-      include: [{
-        model: Hotel,
-        as: 'hotel'
-      }]
-    });
-    if (!room) {
-      return res.status(404).json({
-        success: false,
-        message: 'Room not found'
-      });
-    }
-
-    if (!room.isAvailable) {
+    // Check if room is available
+    const { data: room, error: roomError } = await supabase
+      .from('rooms')
+      .select('is_available')
+      .eq('id', room_id)
+      .single();
+    if (roomError || !room || !room.is_available) {
       return res.status(400).json({
         success: false,
         message: 'Room is not available for booking'
       });
     }
 
-    // Check if hotel is active
-    if (!room.hotel.isActive) {
-      return res.status(400).json({
-        success: false,
-        message: 'Hotel is not accepting bookings'
-      });
-    }
-
-    // Validate guest count
-    if (guests > room.maxGuests) {
-      return res.status(400).json({
-        success: false,
-        message: `Room can accommodate maximum ${room.maxGuests} guests`
-      });
-    }
-
-    // Validate dates
-    const start = new Date(startDate);
-    const end = new Date(endDate);
-    const now = new Date();
-
-    if (start < now) {
-      return res.status(400).json({
-        success: false,
-        message: 'Start date cannot be in the past'
-      });
-    }
-
-    if (end <= start) {
-      return res.status(400).json({
-        success: false,
-        message: 'End date must be after start date'
-      });
-    }
-
-    // Check for conflicting bookings
-    const conflictingBookings = await Booking.findAll({
-      where: {
-        roomId,
-        status: 'confirmed',
-        [Op.or]: [
-          {
-            startDate: { [Op.lte]: start },
-            endDate: { [Op.gt]: start }
-          },
-          {
-            startDate: { [Op.lt]: end },
-            endDate: { [Op.gte]: end }
-          },
-          {
-            startDate: { [Op.gte]: start },
-            endDate: { [Op.lte]: end }
-          }
-        ]
-      }
-    });
-
-    if (conflictingBookings.length > 0) {
-      return res.status(400).json({
-        success: false,
-        message: 'Room is not available for the selected dates'
-      });
-    }
-
-    // Calculate total price
-    const nights = Math.ceil((end - start) / (1000 * 60 * 60 * 24));
-    const totalPrice = nights * room.pricePerNight;
-
-    // Create booking
-    const bookingReference = 'BK' + Date.now() + Math.random().toString(36).substr(2, 5).toUpperCase();
-    const booking = await Booking.create({
-      userId,
-      roomId,
-      hotelId: room.hotel.id,
-      startDate: start,
-      endDate: end,
-      guests,
-      specialRequests,
-      totalPrice,
-      bookingReference
-    });
-
-    const populatedBooking = await Booking.findByPk(booking.id, {
-      include: [
+    // Insert booking
+    const { data: booking, error } = await supabase
+      .from('bookings')
+      .insert([
         {
-          model: User,
-          as: 'user',
-          attributes: ['id', 'name', 'email']
-        },
-        {
-          model: Room,
-          as: 'room',
-          attributes: ['id', 'roomType', 'roomNumber', 'pricePerNight']
-        },
-        {
-          model: Hotel,
-          as: 'hotel',
-          attributes: ['id', 'name', 'location', 'address']
+          user_id,
+          hotel_id,
+          room_id,
+          check_in,
+          check_out,
+          total_price,
+          status: 'confirmed'
         }
-      ]
-    });
+      ])
+      .select()
+      .single();
+    if (error) throw error;
+
+    // Mark room as unavailable
+    await supabase
+      .from('rooms')
+      .update({ is_available: false })
+      .eq('id', room_id);
 
     res.status(201).json({
       success: true,
       message: 'Booking created successfully',
-      data: {
-        booking: populatedBooking
-      }
+      data: { booking }
     });
   } catch (error) {
     next(error);
   }
 };
 
-// @desc    Get user's bookings
+// @desc    Get all bookings for a user
 // @route   GET /api/bookings
 // @access  Private
-const getUserBookings = async (req, res, next) => {
+const getBookings = async (req, res, next) => {
   try {
-    const { status, page = 1, limit = 10 } = req.query;
-    const userId = req.user.id;
-
-    // Build filter
-    const where = { userId };
-    if (status) {
-      where.status = status;
-    }
-
-    // Calculate pagination
-    const pageNumber = parseInt(page);
-    const limitNumber = parseInt(limit);
-    const offset = (pageNumber - 1) * limitNumber;
-
-    // Get total count
-    const total = await Booking.count({ where });
-
-    // Get bookings
-    const bookings = await Booking.findAll({
-      where,
-      include: [
-        {
-          model: Room,
-          as: 'room',
-          attributes: ['id', 'roomType', 'roomNumber', 'pricePerNight', 'amenities']
-        },
-        {
-          model: Hotel,
-          as: 'hotel',
-          attributes: ['id', 'name', 'location', 'starRating', 'address', 'phone']
-        }
-      ],
-      order: [['createdAt', 'DESC']],
-      offset,
-      limit: limitNumber
-    });
+    const user_id = req.user.id;
+    const { data: bookings, error } = await supabase
+      .from('bookings')
+      .select('*')
+      .eq('user_id', user_id)
+      .order('created_at', { ascending: false });
+    if (error) throw error;
 
     res.status(200).json({
       success: true,
       message: 'Bookings retrieved successfully',
-      data: {
-        bookings,
-        pagination: {
-          currentPage: pageNumber,
-          totalPages: Math.ceil(total / limitNumber),
-          totalBookings: total,
-          hasNextPage: pageNumber < Math.ceil(total / limitNumber),
-          hasPrevPage: pageNumber > 1
-        }
-      }
-    });
-  } catch (error) {
-    next(error);
-  }
-};
-
-// @desc    Get all bookings (Admin only)
-// @route   GET /api/bookings/all
-// @access  Private (Admin only)
-const getAllBookings = async (req, res, next) => {
-  try {
-    const { status, hotelId, page = 1, limit = 20 } = req.query;
-
-    // Build filter
-    const filter = {};
-    if (status) {
-      filter.status = status;
-    }
-    if (hotelId) {
-      filter.hotelId = hotelId;
-    }
-
-    // Calculate pagination
-    const pageNumber = parseInt(page);
-    const limitNumber = parseInt(limit);
-    const skip = (pageNumber - 1) * limitNumber;
-
-    // Get total count
-    const total = await Booking.countDocuments(filter);
-
-    // Get bookings
-    const bookings = await Booking.find(filter)
-      .populate('userId', 'name email')
-      .populate('roomId', 'roomType roomNumber pricePerNight')
-      .populate('hotelId', 'name location starRating')
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(limitNumber);
-
-    res.status(200).json({
-      success: true,
-      message: 'All bookings retrieved successfully',
-      data: {
-        bookings,
-        pagination: {
-          currentPage: pageNumber,
-          totalPages: Math.ceil(total / limitNumber),
-          totalBookings: total,
-          hasNextPage: pageNumber < Math.ceil(total / limitNumber),
-          hasPrevPage: pageNumber > 1
-        }
-      }
-    });
-  } catch (error) {
-    next(error);
-  }
-};
-
-// @desc    Cancel booking
-// @route   PUT /api/bookings/:id/cancel
-// @access  Private
-const cancelBooking = async (req, res, next) => {
-  try {
-    const bookingId = req.params.id;
-    const userId = req.user.id;
-    const userRole = req.user.role;
-
-    // Find booking
-    const booking = await Booking.findById(bookingId);
-    if (!booking) {
-      return res.status(404).json({
-        success: false,
-        message: 'Booking not found'
-      });
-    }
-
-    // Check if user owns the booking or is admin
-    if (booking.userId.toString() !== userId && userRole !== 'admin') {
-      return res.status(403).json({
-        success: false,
-        message: 'Not authorized to cancel this booking'
-      });
-    }
-
-    // Check if booking is already cancelled
-    if (booking.status === 'cancelled') {
-      return res.status(400).json({
-        success: false,
-        message: 'Booking is already cancelled'
-      });
-    }
-
-    // Check if booking has already started
-    if (booking.startDate <= new Date()) {
-      return res.status(400).json({
-        success: false,
-        message: 'Cannot cancel booking that has already started'
-      });
-    }
-
-    // Update booking status
-    const updatedBooking = await Booking.findByIdAndUpdate(
-      bookingId,
-      { status: 'cancelled' },
-      { new: true }
-    )
-      .populate('userId', 'name email')
-      .populate('roomId', 'roomType roomNumber')
-      .populate('hotelId', 'name location');
-
-    res.status(200).json({
-      success: true,
-      message: 'Booking cancelled successfully',
-      data: {
-        booking: updatedBooking
-      }
+      data: { bookings }
     });
   } catch (error) {
     next(error);
@@ -342,36 +83,69 @@ const cancelBooking = async (req, res, next) => {
 // @access  Private
 const getBookingById = async (req, res, next) => {
   try {
-    const bookingId = req.params.id;
-    const userId = req.user.id;
-    const userRole = req.user.role;
-
-    const booking = await Booking.findById(bookingId)
-      .populate('userId', 'name email')
-      .populate('roomId', 'roomType roomNumber pricePerNight amenities bedType size')
-      .populate('hotelId', 'name location starRating address phone email');
-
-    if (!booking) {
+    const user_id = req.user.id;
+    const { data: booking, error } = await supabase
+      .from('bookings')
+      .select('*')
+      .eq('id', req.params.id)
+      .eq('user_id', user_id)
+      .single();
+    if (error || !booking) {
       return res.status(404).json({
         success: false,
         message: 'Booking not found'
       });
     }
 
-    // Check if user owns the booking or is admin
-    if (booking.userId._id.toString() !== userId && userRole !== 'admin') {
-      return res.status(403).json({
-        success: false,
-        message: 'Not authorized to view this booking'
-      });
-    }
-
     res.status(200).json({
       success: true,
       message: 'Booking details retrieved successfully',
-      data: {
-        booking
-      }
+      data: { booking }
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Cancel booking
+// @route   PUT /api/bookings/:id/cancel
+// @access  Private
+const cancelBooking = async (req, res, next) => {
+  try {
+    const user_id = req.user.id;
+    // Find booking
+    const { data: booking, error: findError } = await supabase
+      .from('bookings')
+      .select('*')
+      .eq('id', req.params.id)
+      .eq('user_id', user_id)
+      .single();
+    if (findError || !booking) {
+      return res.status(404).json({
+        success: false,
+        message: 'Booking not found'
+      });
+    }
+
+    // Update booking status
+    const { data: updatedBooking, error } = await supabase
+      .from('bookings')
+      .update({ status: 'cancelled' })
+      .eq('id', req.params.id)
+      .select()
+      .single();
+    if (error) throw error;
+
+    // Mark room as available again
+    await supabase
+      .from('rooms')
+      .update({ is_available: true })
+      .eq('id', booking.room_id);
+
+    res.status(200).json({
+      success: true,
+      message: 'Booking cancelled successfully',
+      data: { booking: updatedBooking }
     });
   } catch (error) {
     next(error);
@@ -380,8 +154,8 @@ const getBookingById = async (req, res, next) => {
 
 module.exports = {
   createBooking,
-  getUserBookings,
-  getAllBookings,
-  cancelBooking,
-  getBookingById
+  getBookings,
+  getBookingById,
+  cancelBooking
 };
+

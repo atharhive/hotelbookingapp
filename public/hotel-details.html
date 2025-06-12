@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="en" class="scroll-smooth">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hotel Details - StayEase</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        primary: {
+                            50: '#eff6ff',
+                            500: '#3b82f6',
+                            600: '#2563eb',
+                            700: '#1d4ed8',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+</head>
+<body class="bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white">
+    <!-- Navbar (same as index.html) -->
+    <header class="sticky top-0 z-50 bg-white dark:bg-gray-800 shadow-md">
+        <!-- ... Copy navbar from index.html ... -->
+    </header>
+
+    <main class="container mx-auto px-4 py-8">
+        <div id="hotelDetails" class="max-w-6xl mx-auto">
+            <!-- Hotel details will be loaded here -->
+            <div class="text-center py-12">
+                <div class="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600"></div>
+                <p class="mt-2 text-gray-600 dark:text-gray-400">Loading hotel details...</p>
+            </div>
+        </div>
+    </main>
+
+    <!-- Booking Modal -->
+    <div id="bookingModal" class="fixed inset-0 bg-black bg-opacity-50 z-50 hidden flex items-center justify-center p-4">
+        <div class="bg-white dark:bg-gray-800 rounded-xl shadow-2xl w-full max-w-2xl">
+            <div class="p-6">
+                <div class="flex justify-between items-center mb-6">
+                    <h2 class="text-2xl font-bold">Book Your Stay</h2>
+                    <button onclick="hideBookingModal()" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
+                        <i data-lucide="x" class="w-6 h-6"></i>
+                    </button>
+                </div>
+                <div id="bookingForm">
+                    <!-- Booking form will be loaded here -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Initialize Lucide icons
+        lucide.createIcons();
+
+        // Load hotel details
+        async function loadHotelDetails() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const hotelId = urlParams.get('id');
+            
+            if (!hotelId) {
+                window.location.href = '/';
+                return;
+            }
+
+            try {
+                const hotel = JSON.parse(sessionStorage.getItem('selectedHotel'));
+                if (!hotel) {
+                    throw new Error('Hotel details not found');
+                }
+
+                displayHotelDetails(hotel);
+            } catch (error) {
+                console.error('Error loading hotel details:', error);
+                document.getElementById('hotelDetails').innerHTML = `
+                    <div class="text-center py-12">
+                        <i data-lucide="alert-circle" class="w-16 h-16 mx-auto text-red-500 mb-4"></i>
+                        <h3 class="text-xl font-semibold text-gray-600 dark:text-gray-400 mb-2">Error Loading Hotel Details</h3>
+                        <p class="text-gray-500 dark:text-gray-500">${error.message}</p>
+                        <button onclick="window.location.href='/'" class="mt-4 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors">
+                            Return Home
+                        </button>
+                    </div>
+                `;
+                lucide.createIcons();
+            }
+        }
+
+        function displayHotelDetails(hotel) {
+            document.title = `${hotel.name} - StayEase`;
+            
+            document.getElementById('hotelDetails').innerHTML = `
+                <div class="bg-white dark:bg-gray-800 rounded-xl shadow-lg overflow-hidden">
+                    <!-- Image Gallery -->
+                    <div class="relative h-96">
+                        <img src="${hotel.images[0] || 'https://via.placeholder.com/1200x600?text=No+Image'}" 
+                             alt="${hotel.name}" 
+                             class="w-full h-full object-cover">
+                        <div class="absolute bottom-4 right-4 bg-black/50 text-white px-3 py-1 rounded-lg text-sm">
+                            ${hotel.images.length} photos
+                        </div>
+                    </div>
+
+                    <div class="p-8">
+                        <!-- Header -->
+                        <div class="flex justify-between items-start mb-6">
+                            <div>
+                                <h1 class="text-3xl font-bold mb-2">${hotel.name}</h1>
+                                <p class="text-gray-600 dark:text-gray-400 flex items-center">
+                                    <i data-lucide="map-pin" class="w-5 h-5 mr-2"></i>
+                                    ${hotel.location}
+                                </p>
+                            </div>
+                            <div class="flex items-center space-x-2">
+                                <div class="flex text-yellow-400">
+                                    ${Array.from({length: 5}, (_, i) => 
+                                        `<i data-lucide="star" class="w-5 h-5 ${i < hotel.starRating ? 'fill-current' : ''}"></i>`
+                                    ).join('')}
+                                </div>
+                                <span class="text-lg font-semibold">${hotel.starRating}/5</span>
+                            </div>
+                        </div>
+
+                        <!-- Description -->
+                        <div class="prose dark:prose-invert max-w-none mb-8">
+                            <p>${hotel.description}</p>
+                        </div>
+
+                        <!-- Amenities -->
+                        <div class="mb-8">
+                            <h2 class="text-xl font-semibold mb-4">Amenities</h2>
+                            <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                                ${hotel.amenities.map(amenity => `
+                                    <div class="flex items-center space-x-2">
+                                        <i data-lucide="check" class="w-5 h-5 text-green-500"></i>
+                                        <span>${amenity}</span>
+                                    </div>
+                                `).join('')}
+                            </div>
+                        </div>
+
+                        <!-- Available Rooms -->
+                        <div class="mb-8">
+                            <h2 class="text-xl font-semibold mb-4">Available Rooms</h2>
+                            <div class="space-y-4">
+                                ${hotel.rooms.map(room => `
+                                    <div class="border dark:border-gray-700 rounded-lg p-4">
+                                        <div class="flex justify-between items-start">
+                                            <div>
+                                                <h3 class="text-lg font-semibold">${room.type}</h3>
+                                                <p class="text-gray-600 dark:text-gray-400">Capacity: ${room.capacity} guests</p>
+                                                <div class="mt-2 flex flex-wrap gap-2">
+                                                    ${room.amenities.map(amenity => 
+                                                        `<span class="px-2 py-1 bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-300 rounded-full text-xs">${amenity}</span>`
+                                                    ).join('')}
+                                                </div>
+                                            </div>
+                                            <div class="text-right">
+                                                <div class="text-2xl font-bold text-primary-600 dark:text-primary-400">
+                                                    ${hotel.currency} ${room.price}
+                                                </div>
+                                                <div class="text-sm text-gray-600 dark:text-gray-400">per night</div>
+                                                <button onclick="showBookingModal('${hotel.id}', '${room.id}')" 
+                                                        class="mt-2 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors">
+                                                    Book Now
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                `).join('')}
+                            </div>
+                        </div>
+
+                        <!-- Location -->
+                        <div class="mb-8">
+                            <h2 class="text-xl font-semibold mb-4">Location</h2>
+                            <div class="h-96 bg-gray-200 dark:bg-gray-700 rounded-lg">
+                                <!-- Add map integration here -->
+                                <div class="w-full h-full flex items-center justify-center text-gray-500">
+                                    Map will be displayed here
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            lucide.createIcons();
+        }
+
+        // Booking modal functions
+        function showBookingModal(hotelId, roomId) {
+            const modal = document.getElementById('bookingModal');
+            const form = document.getElementById('bookingForm');
+            
+            form.innerHTML = `
+                <form id="bookingFormContent" class="space-y-6">
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div>
+                            <label class="block text-sm font-medium mb-2">Check-in Date</label>
+                            <input type="date" id="checkin" required class="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent dark:bg-gray-700 dark:text-white">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium mb-2">Check-out Date</label>
+                            <input type="date" id="checkout" required class="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent dark:bg-gray-700 dark:text-white">
+                        </div>
+                    </div>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div>
+                            <label class="block text-sm font-medium mb-2">Adults</label>
+                            <select id="adults" required class="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent dark:bg-gray-700 dark:text-white">
+                                ${Array.from({length: 5}, (_, i) => 
+                                    `<option value="${i + 1}">${i + 1} Adult${i > 0 ? 's' : ''}</option>`
+                                ).join('')}
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium mb-2">Children</label>
+                            <select id="children" class="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent dark:bg-gray-700 dark:text-white">
+                                ${Array.from({length: 5}, (_, i) => 
+                                    `<option value="${i}">${i} Child${i !== 1 ? 'ren' : ''}</option>`
+                                ).join('')}
+                            </select>
+                        </div>
+                    </div>
+                    <button type="submit" class="w-full bg-primary-600 text-white py-3 rounded-lg hover:bg-primary-700 transition-colors font-semibold">
+                        Confirm Booking
+                    </button>
+                </form>
+            `;
+
+            modal.classList.remove('hidden');
+            
+            // Set default dates
+            const today = new Date();
+            const tomorrow = new Date(today);
+            tomorrow.setDate(tomorrow.getDate() + 1);
+            
+            document.getElementById('checkin').value = today.toISOString().split('T')[0];
+            document.getElementById('checkout').value = tomorrow.toISOString().split('T')[0];
+
+            // Handle form submission
+            document.getElementById('bookingFormContent').addEventListener('submit', async (e) => {
+                e.preventDefault();
+                
+                const checkin = document.getElementById('checkin').value;
+                const checkout = document.getElementById('checkout').value;
+                const adults = document.getElementById('adults').value;
+                const children = document.getElementById('children').value;
+
+                try {
+                    // Here you would typically make an API call to create the booking
+                    // For now, we'll just show a success message
+                    hideBookingModal();
+                    showMessage('success', 'Booking confirmed! Check your email for details.');
+                } catch (error) {
+                    showMessage('error', error.message || 'Error creating booking');
+                }
+            });
+        }
+
+        function hideBookingModal() {
+            document.getElementById('bookingModal').classList.add('hidden');
+        }
+
+        function showMessage(type, message) {
+            const container = document.getElementById('messageContainer');
+            const id = Date.now();
+            
+            const colors = {
+                success: 'bg-green-500',
+                error: 'bg-red-500',
+                info: 'bg-blue-500',
+                warning: 'bg-yellow-500'
+            };
+
+            const messageEl = document.createElement('div');
+            messageEl.id = `message-${id}`;
+            messageEl.className = `${colors[type]} text-white px-4 py-3 rounded-lg shadow-lg transform transition-all duration-300 translate-x-full`;
+            messageEl.innerHTML = `
+                <div class="flex items-center justify-between">
+                    <span>${message}</span>
+                    <button onclick="removeMessage(${id})" class="ml-4 text-white/80 hover:text-white">
+                        <i data-lucide="x" class="w-4 h-4"></i>
+                    </button>
+                </div>
+            `;
+
+            container.appendChild(messageEl);
+            lucide.createIcons();
+
+            setTimeout(() => {
+                messageEl.classList.remove('translate-x-full');
+            }, 100);
+
+            setTimeout(() => {
+                removeMessage(id);
+            }, 5000);
+        }
+
+        function removeMessage(id) {
+            const messageEl = document.getElementById(`message-${id}`);
+            if (messageEl) {
+                messageEl.classList.add('translate-x-full');
+                setTimeout(() => {
+                    messageEl.remove();
+                }, 300);
+            }
+        }
+
+        // Load hotel details when page loads
+        document.addEventListener('DOMContentLoaded', loadHotelDetails);
+    </script>
+</body>
+</html> 

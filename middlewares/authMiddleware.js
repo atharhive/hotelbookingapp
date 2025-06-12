@@ -1,5 +1,4 @@
-const jwt = require('jsonwebtoken');
-const User = require('../models/User');
+const { supabase } = require('../config/db');
 
 const protect = async (req, res, next) => {
   try {
@@ -17,47 +16,37 @@ const protect = async (req, res, next) => {
       });
     }
 
-    // Verify token
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'hotel_booking_secret_key');
+    // Verify token with Supabase
+    const { data: { user }, error } = await supabase.auth.getUser(token);
 
-    // Get user from token
-    const user = await User.findByPk(decoded.id);
-    if (!user) {
+    if (error || !user) {
       return res.status(401).json({
         success: false,
-        message: 'Token is valid but user not found'
+        message: 'Invalid or expired token'
       });
     }
 
-    // Check if user is active
-    if (!user.isActive) {
+    // Get additional user data from public.users table
+    const { data: userData, error: userError } = await supabase
+      .from('users')
+      .select('*')
+      .eq('id', user.id)
+      .single();
+
+    if (userError) {
       return res.status(401).json({
         success: false,
-        message: 'User account is deactivated'
+        message: 'User data not found'
       });
     }
 
     // Add user to request object
-    req.user = user;
+    req.user = { ...user, ...userData };
     next();
   } catch (error) {
-    if (error.name === 'JsonWebTokenError') {
-      return res.status(401).json({
-        success: false,
-        message: 'Invalid token'
-      });
-    }
-    
-    if (error.name === 'TokenExpiredError') {
-      return res.status(401).json({
-        success: false,
-        message: 'Token expired'
-      });
-    }
-
     return res.status(500).json({
       success: false,
-      message: 'Token verification failed'
+      message: 'Authentication failed'
     });
   }
 };

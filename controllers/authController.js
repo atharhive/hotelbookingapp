@@ -1,4 +1,4 @@
-const User = require('../models/User');
+const { supabase } = require('../config/db');
 const generateToken = require('../utils/generateToken');
 
 // @desc    Register new user
@@ -12,33 +12,43 @@ const generateToken = require('../utils/generateToken');
 // }
 const register = async (req, res, next) => {
   try {
-    const { name, email, password, role } = req.body;
+    const { email, password, full_name } = req.body;
 
-    // Check if user already exists
-    const existingUser = await User.findOne({ where: { email } });
-    if (existingUser) {
+    // Register user with Supabase Auth
+    const { data: authData, error: authError } = await supabase.auth.signUp({
+      email,
+      password,
+    });
+
+    if (authError) {
       return res.status(400).json({
         success: false,
-        message: 'User already exists with this email'
+        message: authError.message
       });
     }
 
-    // Create user
-    const user = await User.create({
-      name,
-      email,
-      password,
-      role: role || 'user'
-    });
+    // The user will be automatically created in the public.users table via the trigger
+    // We just need to update the full_name
+    const { error: updateError } = await supabase
+      .from('users')
+      .update({ full_name })
+      .eq('id', authData.user.id);
+
+    if (updateError) {
+      return res.status(400).json({
+        success: false,
+        message: updateError.message
+      });
+    }
 
     // Generate token
-    const token = generateToken(user.id);
+    const token = generateToken(authData.user.id);
 
     res.status(201).json({
       success: true,
       message: 'User registered successfully',
       data: {
-        user,
+        user: authData.user,
         token
       }
     });
@@ -67,26 +77,13 @@ const login = async (req, res, next) => {
       });
     }
 
-    // Check if user exists and get password
-    const user = await User.findOne({ where: { email } });
-    if (!user) {
-      return res.status(401).json({
-        success: false,
-        message: 'Invalid email or password'
-      });
-    }
+    // Login with Supabase Auth
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
 
-    // Check if user is active
-    if (!user.isActive) {
-      return res.status(401).json({
-        success: false,
-        message: 'Account is deactivated. Please contact support.'
-      });
-    }
-
-    // Validate password
-    const isPasswordCorrect = await user.comparePassword(password);
-    if (!isPasswordCorrect) {
+    if (error) {
       return res.status(401).json({
         success: false,
         message: 'Invalid email or password'
@@ -94,13 +91,13 @@ const login = async (req, res, next) => {
     }
 
     // Generate token
-    const token = generateToken(user.id);
+    const token = generateToken(data.user.id);
 
     res.status(200).json({
       success: true,
       message: 'Login successful',
       data: {
-        user,
+        user: data.user,
         token
       }
     });
@@ -109,19 +106,31 @@ const login = async (req, res, next) => {
   }
 };
 
-// @desc    Get current user (for token validation)
+// @desc    Get current user
 // @route   GET /api/auth/me
 // @access  Private
 const getCurrentUser = async (req, res, next) => {
   try {
-    const user = await User.findByPk(req.user.id, {
-      attributes: { exclude: ['password'] }
-    });
+    const { data: { user }, error } = await supabase.auth.getUser();
     
-    if (!user) {
+    if (error || !user) {
       return res.status(404).json({
         success: false,
         message: 'User not found'
+      });
+    }
+
+    // Get additional user data from public.users table
+    const { data: userData, error: userError } = await supabase
+      .from('users')
+      .select('*')
+      .eq('id', user.id)
+      .single();
+
+    if (userError) {
+      return res.status(404).json({
+        success: false,
+        message: 'User data not found'
       });
     }
 
@@ -129,7 +138,7 @@ const getCurrentUser = async (req, res, next) => {
       success: true,
       message: 'User retrieved successfully',
       data: {
-        user
+        user: { ...user, ...userData }
       }
     });
   } catch (error) {
@@ -142,12 +151,26 @@ const getCurrentUser = async (req, res, next) => {
 // @access  Private
 const getProfile = async (req, res, next) => {
   try {
-    const user = await User.findByPk(req.user.id);
+    const { data: { user }, error } = await supabase.auth.getUser();
     
-    if (!user) {
+    if (error || !user) {
       return res.status(404).json({
         success: false,
         message: 'User not found'
+      });
+    }
+
+    // Get user profile from public.users table
+    const { data: profile, error: profileError } = await supabase
+      .from('users')
+      .select('*')
+      .eq('id', user.id)
+      .single();
+
+    if (profileError) {
+      return res.status(404).json({
+        success: false,
+        message: 'Profile not found'
       });
     }
 
@@ -155,7 +178,7 @@ const getProfile = async (req, res, next) => {
       success: true,
       message: 'Profile retrieved successfully',
       data: {
-        user
+        user: { ...user, ...profile }
       }
     });
   } catch (error) {
